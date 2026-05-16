@@ -53,3 +53,13 @@ export const inputToTags = (value: string) =>
     .map((tag) => tag.trim())
     .filter(Boolean)
     .slice(0, 20);
+
+export const COUNTRIES: Record<string, string[]> = {
+  Pakistan: ["Lahore", "Karachi", "Islamabad"],
+  India: ["Delhi", "Mumbai"],
+  "United States": ["New York", "Los Angeles", "Chicago"],
+  "United Kingdom": ["London"],
+  Canada: ["Toronto", "Vancouver"],
+  Australia: ["Sydney"],
+  "United Arab Emirates": ["Dubai"],
+};

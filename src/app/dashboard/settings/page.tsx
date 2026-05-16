@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertCircle, Bell, CheckCircle2, Loader2, PaintBucket, Save, Shield, Trash2, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Bell, CheckCircle2, Loader2, PaintBucket, Plus, Save, Shield, Trash2, UserRound, X } from "lucide-react";
 import { BubbleCard } from "@/components/ui/BubbleCard";
 import { BubbleButton } from "@/components/ui/BubbleButton";
 import { useAuth } from "@/components/AuthContext";
-import { authApi, ProfileUpdate } from "@/lib/api";
-import { avatarInitial, displayName, inferTimezone, inputToTags, profileImageUrl, tagsToInput } from "@/lib/profile";
+import { authApi, ProfileUpdate, QualificationItem } from "@/lib/api";
+import { avatarInitial, COUNTRIES, displayName, inferTimezone, inputToTags, profileImageUrl, tagsToInput } from "@/lib/profile";
 
 type Tab = "profile" | "notifications" | "security" | "appearance" | "account";
+
+const degreeTypes = ["Bachelor", "Master", "PHD", "Diploma", "Certificate"];
 
 export default function SettingsPage() {
   const { user, refreshUser } = useAuth();
@@ -18,35 +20,50 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [identityInput, setIdentityInput] = useState("");
   const [audienceInput, setAudienceInput] = useState("");
   const [form, setForm] = useState<ProfileUpdate>({});
+  const [qualifications, setQualifications] = useState<QualificationItem[]>([]);
 
   useEffect(() => {
     if (!user) return;
+    const country = user.country || "Pakistan";
+    const city = user.city || "Lahore";
+    setEmail(user.email);
     setForm({
-      email: user.email,
       display_name: user.display_name || user.username,
-      first_name: user.first_name || user.username,
-      last_name: user.last_name || "",
       phone_number: user.phone_number || "",
-      country: user.country || "",
-      city: user.city || "",
-      timezone: user.timezone || "",
+      country,
+      city,
+      timezone: user.timezone || inferTimezone(country, city),
       bio: user.bio || "",
-      qualification: user.qualification || "",
       experience_years: user.experience_years ?? 0,
     });
+    setQualifications(user.qualifications?.length ? user.qualifications : []);
     setIdentityInput(tagsToInput(user.identity_keywords));
     setAudienceInput(tagsToInput(user.audience_keywords));
   }, [user]);
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(""), 3500);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+
+  const selectedCities = useMemo(() => COUNTRIES[String(form.country || "Pakistan")] || [], [form.country]);
+  const identityTags = inputToTags(identityInput);
+  const audienceTags = inputToTags(audienceInput);
+
   const updateField = (key: keyof ProfileUpdate, value: string | number) => {
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "country" || key === "city") {
-        next.timezone = inferTimezone(String(next.country || ""), String(next.city || ""));
+      if (key === "country") {
+        const firstCity = COUNTRIES[String(value)]?.[0] || "";
+        next.city = firstCity;
+        next.timezone = inferTimezone(String(value), firstCity);
       }
+      if (key === "city") next.timezone = inferTimezone(String(next.country || ""), String(value));
       return next;
     });
   };
@@ -59,7 +76,7 @@ export default function SettingsPage() {
     try {
       await authApi.uploadAvatar(file);
       await refreshUser();
-      setSuccess("Avatar updated.");
+      setSuccess("Profile image updated.");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Avatar upload failed");
     } finally {
@@ -67,30 +84,54 @@ export default function SettingsPage() {
     }
   };
 
+  const addQualification = () => {
+    setQualifications((prev) => [...prev, { degree_type: "Bachelor", title: "", institute: "" }]);
+  };
+
+  const updateQualification = (index: number, key: keyof QualificationItem, value: string) => {
+    setQualifications((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
+  };
+
+  const removeQualification = (index: number) => {
+    setQualifications((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (password && password !== confirmPassword) {
-      setError("Passwords do not match");
+
+    if (tab === "profile" && (!form.country || !form.city)) {
+      setError("Country and city are required.");
+      return;
+    }
+    if (tab === "security" && password && password !== confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
 
     setLoading(true);
     try {
-      const payload: ProfileUpdate = {
-        ...form,
-        identity_keywords: inputToTags(identityInput),
-        audience_keywords: inputToTags(audienceInput),
-      };
-      if (password) payload.password = password;
+      const payload: ProfileUpdate = {};
+      if (tab === "profile") {
+        Object.assign(payload, {
+          ...form,
+          qualifications: qualifications.filter((q) => q.degree_type && q.title.trim() && q.institute.trim()),
+          identity_keywords: identityTags,
+          audience_keywords: audienceTags,
+        });
+      }
+      if (tab === "security") {
+        payload.email = email;
+        if (password) payload.password = password;
+      }
       await authApi.updateMe(payload);
       await refreshUser();
       setPassword("");
       setConfirmPassword("");
-      setSuccess("Profile updated successfully.");
+      setSuccess(tab === "security" ? "Security settings updated." : "Profile updated successfully.");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to update profile");
+      setError(e instanceof Error ? e.message : "Failed to update settings");
     } finally {
       setLoading(false);
     }
@@ -120,7 +161,7 @@ export default function SettingsPage() {
             {tab === "profile" && (
               <>
                 <div className="flex items-center gap-5">
-                  <div className="w-20 h-20 rounded-full overflow-hidden bg-primary/10 border-[3px] border-border flex items-center justify-center text-2xl font-black text-primary">
+                  <div className="w-24 h-24 rounded-bubble-lg overflow-hidden bg-primary/10 border-[3px] border-border flex items-center justify-center text-3xl font-black text-primary shrink-0">
                     {profileImageUrl(user) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={profileImageUrl(user)} alt={displayName(user)} className="w-full h-full object-cover" />
@@ -128,35 +169,52 @@ export default function SettingsPage() {
                       avatarInitial(user)
                     )}
                   </div>
-                  <label className="inline-flex">
-                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => void handleAvatarUpload(e.target.files?.[0])} />
-                    <span className="h-10 px-4 rounded-bubble-sm border-[3px] border-border bg-background font-bold flex items-center">
-                      Upload Profile Image
-                    </span>
-                  </label>
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-bold truncate">{displayName(user)}</h2>
+                    <p className="text-sm text-foreground/45 font-bold">@{user?.username}</p>
+                    <label className="inline-flex mt-3">
+                      <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => void handleAvatarUpload(e.target.files?.[0])} />
+                      <span className="h-10 px-4 rounded-bubble-sm border-[3px] border-border bg-background font-bold flex items-center">
+                        Upload Image
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Display Name" value={String(form.display_name || "")} onChange={(v) => updateField("display_name", v)} />
-                  <Field label="Username" value={user?.username || ""} readOnly />
-                  <Field label="First Name" value={String(form.first_name || "")} onChange={(v) => updateField("first_name", v)} />
-                  <Field label="Last Name" value={String(form.last_name || "")} onChange={(v) => updateField("last_name", v)} />
-                  <Field label="Email" type="email" value={String(form.email || "")} onChange={(v) => updateField("email", v)} />
+                  <Field label="Name" placeholder="Muhammad Saleh" value={String(form.display_name || "")} onChange={(v) => updateField("display_name", v)} />
                   <Field label="Phone Number" value={String(form.phone_number || "")} onChange={(v) => updateField("phone_number", v)} />
-                  <Field label="Country" value={String(form.country || "")} onChange={(v) => updateField("country", v)} />
-                  <Field label="City" value={String(form.city || "")} onChange={(v) => updateField("city", v)} />
+                  <SelectField label="Country" value={String(form.country || "Pakistan")} options={Object.keys(COUNTRIES)} onChange={(v) => updateField("country", v)} />
+                  <SelectField label="City" value={String(form.city || "Lahore")} options={selectedCities} onChange={(v) => updateField("city", v)} />
                   <Field label="Timezone" value={String(form.timezone || "")} readOnly />
                   <Field label="Experience Years" type="number" value={String(form.experience_years ?? 0)} onChange={(v) => updateField("experience_years", Number(v || 0))} />
-                  <Field label="Qualification" className="md:col-span-2" value={String(form.qualification || "")} onChange={(v) => updateField("qualification", v)} />
                   <TextArea label="Bio" value={String(form.bio || "")} onChange={(v) => updateField("bio", v)} />
-                  <Field label="Identity Keywords" className="md:col-span-2" value={identityInput} onChange={setIdentityInput} />
-                  <Field label={user?.role === "consultant" ? "Who You Serve" : "What You Need"} className="md:col-span-2" value={audienceInput} onChange={setAudienceInput} />
                 </div>
+
+                <SectionTitle title="Qualifications" actionLabel="Add Qualification" onAction={addQualification} />
+                <div className="flex flex-col gap-3">
+                  {qualifications.length === 0 && <p className="text-sm text-foreground/50 font-medium">No qualifications added yet.</p>}
+                  {qualifications.map((q, index) => (
+                    <div key={index} className="grid grid-cols-1 md:grid-cols-[160px_1fr_1fr_40px] gap-3 items-end rounded-bubble-sm border-[2px] border-border p-3 bg-background/50">
+                      <SelectField label="Degree" value={q.degree_type} options={degreeTypes} onChange={(v) => updateQualification(index, "degree_type", v)} />
+                      <Field label="Title" value={q.title} onChange={(v) => updateQualification(index, "title", v)} />
+                      <Field label="Institute" value={q.institute} onChange={(v) => updateQualification(index, "institute", v)} />
+                      <button type="button" onClick={() => removeQualification(index)} className="h-11 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <TagInput label="Identity Keywords" value={identityInput} onChange={setIdentityInput} tags={identityTags} />
+                <TagInput label={user?.role === "consultant" ? "Who You Serve" : "What You Need"} value={audienceInput} onChange={setAudienceInput} tags={audienceTags} />
               </>
             )}
 
             {tab === "security" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Email Address" type="email" value={email} onChange={setEmail} />
+                <div />
                 <Field label="New Password" type="password" value={password} onChange={setPassword} />
                 <Field label="Confirm Password" type="password" value={confirmPassword} onChange={setConfirmPassword} />
               </div>
@@ -189,11 +247,22 @@ function TabButton({ active, icon, label, onClick }: { active: boolean; icon: Re
   );
 }
 
-function Field({ label, value, onChange, type = "text", readOnly = false, className = "" }: { label: string; value: string; onChange?: (value: string) => void; type?: string; readOnly?: boolean; className?: string }) {
+function Field({ label, value, onChange, type = "text", readOnly = false, className = "", placeholder = "" }: { label: string; value: string; onChange?: (value: string) => void; type?: string; readOnly?: boolean; className?: string; placeholder?: string }) {
   return (
     <div className={`flex flex-col gap-1.5 ${className}`}>
       <label className="text-sm font-bold text-foreground/80">{label}</label>
-      <input type={type} readOnly={readOnly} value={value} onChange={(e) => onChange?.(e.target.value)} className={`h-11 px-4 rounded-bubble-sm border-[3px] border-border bg-background focus:outline-none focus:border-primary transition-colors font-medium ${readOnly ? "opacity-70" : ""}`} />
+      <input type={type} readOnly={readOnly} value={value} placeholder={placeholder} onChange={(e) => onChange?.(e.target.value)} className={`h-11 px-4 rounded-bubble-sm border-[3px] border-border bg-background focus:outline-none focus:border-primary transition-colors font-medium ${readOnly ? "opacity-70" : ""}`} />
+    </div>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-bold text-foreground/80">{label}</label>
+      <select required value={value} onChange={(e) => onChange(e.target.value)} className="h-11 px-4 rounded-bubble-sm border-[3px] border-border bg-background focus:outline-none focus:border-primary transition-colors font-medium">
+        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
     </div>
   );
 }
@@ -203,6 +272,34 @@ function TextArea({ label, value, onChange }: { label: string; value: string; on
     <div className="md:col-span-2 flex flex-col gap-1.5">
       <label className="text-sm font-bold text-foreground/80">{label}</label>
       <textarea value={value} onChange={(e) => onChange(e.target.value)} maxLength={300} className="min-h-24 p-4 rounded-bubble-sm border-[3px] border-border bg-background focus:outline-none focus:border-primary transition-colors font-medium" />
+    </div>
+  );
+}
+
+function SectionTitle({ title, actionLabel, onAction }: { title: string; actionLabel: string; onAction: () => void }) {
+  return (
+    <div className="flex items-center justify-between border-t-[3px] border-border pt-5">
+      <h2 className="text-xl font-bold">{title}</h2>
+      <BubbleButton type="button" variant="secondary" size="sm" onClick={onAction} className="gap-2">
+        <Plus size={15} /> {actionLabel}
+      </BubbleButton>
+    </div>
+  );
+}
+
+function TagInput({ label, value, onChange, tags }: { label: string; value: string; onChange: (value: string) => void; tags: string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Field label={`${label} (${tags.length}/20)`} value={value} onChange={onChange} placeholder="Add keywords separated by commas" />
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <span key={tag} className="px-2.5 py-1 rounded-bubble-sm border-[2px] border-primary/20 bg-primary/10 text-primary text-xs font-black">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

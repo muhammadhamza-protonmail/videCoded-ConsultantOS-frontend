@@ -34,11 +34,18 @@ export interface User {
   timezone?: string | null;
   bio?: string | null;
   qualification?: string | null;
+  qualifications?: QualificationItem[] | null;
   experience_years?: number | null;
   profile_image_path?: string | null;
   identity_keywords?: string[] | null;
   audience_keywords?: string[] | null;
   created_at: string;
+}
+
+export interface QualificationItem {
+  degree_type: string;
+  title: string;
+  institute: string;
 }
 
 export type ProfileUpdate = Partial<Pick<
@@ -53,6 +60,7 @@ export type ProfileUpdate = Partial<Pick<
   | "timezone"
   | "bio"
   | "qualification"
+  | "qualifications"
   | "experience_years"
   | "identity_keywords"
   | "audience_keywords"
