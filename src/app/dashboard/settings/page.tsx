@@ -252,14 +252,18 @@ export default function SettingsPage() {
                     </div>
                   ))}
                   {draftQualification && (
-                    <div className="grid grid-cols-1 md:grid-cols-[150px_1fr_1fr_auto_auto] gap-3 items-end rounded-bubble-sm border-[2px] border-primary/30 p-3 bg-primary/5">
-                      <SelectField label="Degree" value={draftQualification.degree_type} options={degreeTypes} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, degree_type: v } : prev)} />
-                      <Field label="Title" value={draftQualification.title} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, title: v } : prev)} />
-                      <Field label="Institute" value={draftQualification.institute} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, institute: v } : prev)} />
-                      <BubbleButton type="button" size="sm" onClick={saveDraftQualification}>Add</BubbleButton>
-                      <button type="button" onClick={() => setDraftQualification(null)} className="h-10 w-10 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
-                        <X size={16} />
-                      </button>
+                    <div className="rounded-bubble-sm border-[2px] border-primary/30 p-3 bg-primary/5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-[130px_minmax(0,1fr)_minmax(0,1fr)] gap-3">
+                        <SelectField label="Degree" value={draftQualification.degree_type} options={degreeTypes} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, degree_type: v } : prev)} />
+                        <Field label="Title" value={draftQualification.title} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, title: v } : prev)} />
+                        <Field label="Institute" value={draftQualification.institute} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, institute: v } : prev)} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <BubbleButton type="button" size="sm" onClick={saveDraftQualification}>Add</BubbleButton>
+                        <button type="button" onClick={() => setDraftQualification(null)} className="h-9 w-9 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
+                          <X size={15} />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
