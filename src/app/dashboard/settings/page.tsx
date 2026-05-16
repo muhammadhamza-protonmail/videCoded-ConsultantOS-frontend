@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Bell, CheckCircle2, Loader2, PaintBucket, Plus, Save, Shield, Trash2, UserRound, X } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle2, Loader2, PaintBucket, Pencil, Plus, Save, Shield, Trash2, UserRound, X } from "lucide-react";
 import { BubbleCard } from "@/components/ui/BubbleCard";
 import { BubbleButton } from "@/components/ui/BubbleButton";
 import { useAuth } from "@/components/AuthContext";
@@ -25,6 +25,11 @@ export default function SettingsPage() {
   const [audienceInput, setAudienceInput] = useState("");
   const [form, setForm] = useState<ProfileUpdate>({});
   const [qualifications, setQualifications] = useState<QualificationItem[]>([]);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [draftQualification, setDraftQualification] = useState<QualificationItem | null>(null);
+  const [tagEditor, setTagEditor] = useState<null | "identity" | "audience">(null);
+  const [tagDraft, setTagDraft] = useState("");
 
   useEffect(() => {
     if (!user) return;
@@ -43,6 +48,7 @@ export default function SettingsPage() {
     setQualifications(user.qualifications?.length ? user.qualifications : []);
     setIdentityInput(tagsToInput(user.identity_keywords));
     setAudienceInput(tagsToInput(user.audience_keywords));
+    setDraftName(user.display_name || user.username);
   }, [user]);
 
   useEffect(() => {
@@ -84,16 +90,39 @@ export default function SettingsPage() {
     }
   };
 
-  const addQualification = () => {
-    setQualifications((prev) => [...prev, { degree_type: "Bachelor", title: "", institute: "" }]);
-  };
-
-  const updateQualification = (index: number, key: keyof QualificationItem, value: string) => {
-    setQualifications((prev) => prev.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
-  };
-
   const removeQualification = (index: number) => {
     setQualifications((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const saveDraftName = () => {
+    const nextName = draftName.trim() || user?.username || "";
+    updateField("display_name", nextName);
+    setDraftName(nextName);
+    setIsEditingName(false);
+  };
+
+  const saveDraftQualification = () => {
+    if (!draftQualification?.title.trim() || !draftQualification.institute.trim()) return;
+    setQualifications((prev) => [...prev, draftQualification]);
+    setDraftQualification(null);
+  };
+
+  const addTag = () => {
+    if (!tagEditor) return;
+    const current = tagEditor === "identity" ? identityTags : audienceTags;
+    const nextTags = [...current, ...inputToTags(tagDraft)]
+      .filter((tag, index, arr) => arr.findIndex((t) => t.toLowerCase() === tag.toLowerCase()) === index)
+      .slice(0, 20);
+    if (tagEditor === "identity") setIdentityInput(tagsToInput(nextTags));
+    else setAudienceInput(tagsToInput(nextTags));
+    setTagDraft("");
+  };
+
+  const removeTag = (kind: "identity" | "audience", tag: string) => {
+    const current = kind === "identity" ? identityTags : audienceTags;
+    const next = current.filter((item) => item !== tag);
+    if (kind === "identity") setIdentityInput(tagsToInput(next));
+    else setAudienceInput(tagsToInput(next));
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -161,28 +190,45 @@ export default function SettingsPage() {
             {tab === "profile" && (
               <>
                 <div className="flex items-center gap-5">
-                  <div className="w-24 h-24 rounded-bubble-lg overflow-hidden bg-primary/10 border-[3px] border-border flex items-center justify-center text-3xl font-black text-primary shrink-0">
+                  <label className="relative group w-24 h-24 rounded-bubble-lg overflow-hidden bg-primary/10 border-[3px] border-border flex items-center justify-center text-3xl font-black text-primary shrink-0">
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => void handleAvatarUpload(e.target.files?.[0])} />
                     {profileImageUrl(user) ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={profileImageUrl(user)} alt={displayName(user)} className="w-full h-full object-cover" />
                     ) : (
                       avatarInitial(user)
                     )}
-                  </div>
+                    <span className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
+                      <Pencil size={20} />
+                    </span>
+                  </label>
                   <div className="min-w-0">
-                    <h2 className="text-2xl font-bold truncate">{displayName(user)}</h2>
+                    {isEditingName ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          autoFocus
+                          value={draftName}
+                          placeholder="Muhammad Saleh"
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveDraftName();
+                            if (e.key === "Escape") setIsEditingName(false);
+                          }}
+                          className="h-10 px-3 rounded-bubble-sm border-[3px] border-border bg-background text-xl font-bold focus:outline-none focus:border-primary"
+                        />
+                        <button type="button" onClick={saveDraftName} className="h-10 px-3 rounded-bubble-sm border-[2px] border-primary text-primary font-bold">Save</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setIsEditingName(true)} className="group flex items-center gap-2 text-left">
+                        <span className="text-2xl font-bold truncate">{String(form.display_name || displayName(user))}</span>
+                        <Pencil size={16} className="text-foreground/35 group-hover:text-primary" />
+                      </button>
+                    )}
                     <p className="text-sm text-foreground/45 font-bold">@{user?.username}</p>
-                    <label className="inline-flex mt-3">
-                      <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => void handleAvatarUpload(e.target.files?.[0])} />
-                      <span className="h-10 px-4 rounded-bubble-sm border-[3px] border-border bg-background font-bold flex items-center">
-                        Upload Image
-                      </span>
-                    </label>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label="Name" placeholder="Muhammad Saleh" value={String(form.display_name || "")} onChange={(v) => updateField("display_name", v)} />
                   <Field label="Phone Number" value={String(form.phone_number || "")} onChange={(v) => updateField("phone_number", v)} />
                   <SelectField label="Country" value={String(form.country || "Pakistan")} options={Object.keys(COUNTRIES)} onChange={(v) => updateField("country", v)} />
                   <SelectField label="City" value={String(form.city || "Lahore")} options={selectedCities} onChange={(v) => updateField("city", v)} />
@@ -191,23 +237,35 @@ export default function SettingsPage() {
                   <TextArea label="Bio" value={String(form.bio || "")} onChange={(v) => updateField("bio", v)} />
                 </div>
 
-                <SectionTitle title="Qualifications" actionLabel="Add Qualification" onAction={addQualification} />
+                <SectionTitle title="Qualifications" actionLabel="Add Qualification" onAction={() => setDraftQualification({ degree_type: "Bachelor", title: "", institute: "" })} />
                 <div className="flex flex-col gap-3">
                   {qualifications.length === 0 && <p className="text-sm text-foreground/50 font-medium">No qualifications added yet.</p>}
                   {qualifications.map((q, index) => (
-                    <div key={index} className="grid grid-cols-1 md:grid-cols-[160px_1fr_1fr_40px] gap-3 items-end rounded-bubble-sm border-[2px] border-border p-3 bg-background/50">
-                      <SelectField label="Degree" value={q.degree_type} options={degreeTypes} onChange={(v) => updateQualification(index, "degree_type", v)} />
-                      <Field label="Title" value={q.title} onChange={(v) => updateQualification(index, "title", v)} />
-                      <Field label="Institute" value={q.institute} onChange={(v) => updateQualification(index, "institute", v)} />
-                      <button type="button" onClick={() => removeQualification(index)} className="h-11 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
+                    <div key={`${q.degree_type}-${q.title}-${index}`} className="flex items-center justify-between gap-3 rounded-bubble-sm border-[2px] border-border p-3 bg-background/50">
+                      <div>
+                        <p className="font-bold">{q.degree_type} - {q.title}</p>
+                        <p className="text-xs text-foreground/50 font-semibold">{q.institute}</p>
+                      </div>
+                      <button type="button" onClick={() => removeQualification(index)} className="h-9 w-9 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
                         <X size={16} />
                       </button>
                     </div>
                   ))}
+                  {draftQualification && (
+                    <div className="grid grid-cols-1 md:grid-cols-[150px_1fr_1fr_auto_auto] gap-3 items-end rounded-bubble-sm border-[2px] border-primary/30 p-3 bg-primary/5">
+                      <SelectField label="Degree" value={draftQualification.degree_type} options={degreeTypes} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, degree_type: v } : prev)} />
+                      <Field label="Title" value={draftQualification.title} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, title: v } : prev)} />
+                      <Field label="Institute" value={draftQualification.institute} onChange={(v) => setDraftQualification((prev) => prev ? { ...prev, institute: v } : prev)} />
+                      <BubbleButton type="button" size="sm" onClick={saveDraftQualification}>Add</BubbleButton>
+                      <button type="button" onClick={() => setDraftQualification(null)} className="h-10 w-10 rounded-bubble-sm border-[2px] border-border hover:border-red-500 hover:text-red-500 flex items-center justify-center">
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <TagInput label="Identity Keywords" value={identityInput} onChange={setIdentityInput} tags={identityTags} />
-                <TagInput label={user?.role === "consultant" ? "Who You Serve" : "What You Need"} value={audienceInput} onChange={setAudienceInput} tags={audienceTags} />
+                <TagSection label="Identity Keywords" tags={identityTags} onAdd={() => setTagEditor("identity")} onRemove={(tag) => removeTag("identity", tag)} />
+                <TagSection label={user?.role === "consultant" ? "Who You Serve" : "What You Need"} tags={audienceTags} onAdd={() => setTagEditor("audience")} onRemove={(tag) => removeTag("audience", tag)} />
               </>
             )}
 
@@ -235,6 +293,43 @@ export default function SettingsPage() {
           </form>
         </BubbleCard>
       </div>
+      {tagEditor && (
+        <div className="fixed inset-0 z-50 bg-background/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-bubble-lg border-[3px] border-border bg-surface p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold">{tagEditor === "identity" ? "Identity Keywords" : user?.role === "consultant" ? "Who You Serve" : "What You Need"}</h2>
+              <button type="button" onClick={() => { setTagEditor(null); setTagDraft(""); }} className="h-9 w-9 rounded-bubble-sm border-[2px] border-border flex items-center justify-center hover:text-red-500 hover:border-red-500">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(tagEditor === "identity" ? identityTags : audienceTags).map((tag) => (
+                <span key={tag} className="group px-2.5 py-1 rounded-bubble-sm border-[2px] border-primary/20 bg-primary/10 text-primary text-xs font-black inline-flex items-center gap-1.5">
+                  {tag}
+                  <button type="button" onClick={() => removeTag(tagEditor, tag)} className="hidden group-hover:inline-flex">
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={tagDraft}
+                onChange={(e) => setTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addTag();
+                  }
+                }}
+                placeholder="keyword, another keyword"
+                className="h-11 flex-1 px-4 rounded-bubble-sm border-[3px] border-border bg-background focus:outline-none focus:border-primary font-medium"
+              />
+              <BubbleButton type="button" onClick={addTag}>Add</BubbleButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -287,19 +382,28 @@ function SectionTitle({ title, actionLabel, onAction }: { title: string; actionL
   );
 }
 
-function TagInput({ label, value, onChange, tags }: { label: string; value: string; onChange: (value: string) => void; tags: string[] }) {
+function TagSection({ label, tags, onAdd, onRemove }: { label: string; tags: string[]; onAdd: () => void; onRemove: (tag: string) => void }) {
   return (
-    <div className="flex flex-col gap-2">
-      <Field label={`${label} (${tags.length}/20)`} value={value} onChange={onChange} placeholder="Add keywords separated by commas" />
+    <div className="flex flex-col gap-3 border-t-[3px] border-border pt-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">{label} <span className="text-sm text-foreground/40">({tags.length}/20)</span></h2>
+        <BubbleButton type="button" variant="secondary" size="sm" onClick={onAdd} className="gap-2">
+          <Plus size={15} /> Add Tag
+        </BubbleButton>
+      </div>
       {tags.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {tags.map((tag) => (
-            <span key={tag} className="px-2.5 py-1 rounded-bubble-sm border-[2px] border-primary/20 bg-primary/10 text-primary text-xs font-black">
+            <span key={tag} className="group px-2.5 py-1 rounded-bubble-sm border-[2px] border-primary/20 bg-primary/10 text-primary text-xs font-black inline-flex items-center gap-1.5">
               {tag}
+              <button type="button" onClick={() => onRemove(tag)} className="hidden group-hover:inline-flex">
+                <X size={12} />
+              </button>
             </span>
           ))}
         </div>
       )}
+      {tags.length === 0 && <p className="text-sm text-foreground/50 font-medium">No tags yet.</p>}
     </div>
   );
 }
