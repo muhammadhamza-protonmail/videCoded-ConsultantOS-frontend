@@ -9,6 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (data: { username: string; email: string; password: string; role: string }) => Promise<void>;
+  refreshUser: () => Promise<User>;
   logout: () => void;
 }
 
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = getToken();
     console.log("[Auth] Restore session, token exists:", !!token);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!token) { setIsLoading(false); return; }
     
     authApi.me()
@@ -40,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearToken();
       })
       .finally(() => setIsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (username: string, password: string) => {
@@ -63,6 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login(data.username, data.password);
   };
 
+  const refreshUser = async () => {
+    const me = await authApi.me();
+    applyUser(me);
+    return me;
+  };
+
   const logout = () => {
     console.log("[Auth] Logging out");
     clearToken();
@@ -71,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, register, refreshUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

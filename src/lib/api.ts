@@ -25,8 +25,38 @@ export interface User {
   email: string;
   role: "admin" | "consultant" | "client";
   is_active: boolean;
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone_number?: string | null;
+  country?: string | null;
+  city?: string | null;
+  timezone?: string | null;
+  bio?: string | null;
+  qualification?: string | null;
+  experience_years?: number | null;
+  profile_image_path?: string | null;
+  identity_keywords?: string[] | null;
+  audience_keywords?: string[] | null;
   created_at: string;
 }
+
+export type ProfileUpdate = Partial<Pick<
+  User,
+  | "email"
+  | "display_name"
+  | "first_name"
+  | "last_name"
+  | "phone_number"
+  | "country"
+  | "city"
+  | "timezone"
+  | "bio"
+  | "qualification"
+  | "experience_years"
+  | "identity_keywords"
+  | "audience_keywords"
+>> & { password?: string };
 
 export interface FormTemplate {
   id: number;
@@ -155,8 +185,27 @@ export const authApi = {
 
   me: () => request<User>("/auth/me"),
 
-  updateMe: (data: { email?: string; password?: string }) =>
+  updateMe: (data: ProfileUpdate) =>
     request<User>("/auth/me", { method: "PATCH", body: JSON.stringify(data) }),
+  uploadAvatar: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch(`${API_BASE}/auth/me/avatar`, {
+      method: "POST",
+      headers: (() => {
+        const token = getToken();
+        const baseHeaders: Record<string, string> = { "ngrok-skip-browser-warning": "1" };
+        return token ? { ...baseHeaders, Authorization: `Bearer ${token}` } : baseHeaders;
+      })(),
+      body: form,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Avatar upload failed" }));
+        throw new Error(err.detail || "Avatar upload failed");
+      }
+      return res.json() as Promise<User>;
+    });
+  },
   requestPasswordReset: (email: string) =>
     request<{ ok: boolean }>("/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) }, false),
   confirmPasswordReset: (token: string, new_password: string) =>
