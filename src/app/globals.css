@@ -1,26 +1,123 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
-@theme inline {
+@theme {
+  --color-border: var(--border);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-surface: var(--surface);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Professional Modern SaaS Palette (Indigo & Slate) */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1; /* Indigo */
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b;
+
+  --color-primary: #4f46e5;
+  --color-primary-hover: #4338ca;
+  --color-primary-foreground: #ffffff;
+
+  /* Refined Professional Radius Scale */
+  --radius-bubble: 0.75rem;     /* 12px - modern card */
+  --radius-bubble-sm: 0.5rem;   /* 8px - modern button/input */
+  --radius-bubble-lg: 1rem;     /* 16px - modals */
+
+  /* Floating Animation */
+  --animate-float: float 6s ease-in-out infinite;
+  
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
   }
 }
 
+/* Light Theme (Clean, ultra-white with subtle slate borders) */
+:root {
+  --background: #f8fafc; /* very light slate */
+  --foreground: #0f172a; /* dark slate */
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --muted-foreground: #475569;
+  --subtle-foreground: #94a3b8;
+}
+
+/* Dark Theme (Deep slate, high contrast, elegant) */
+.dark {
+  --background: #0f172a;
+  --foreground: #f8fafc;
+  --surface: #1e293b;
+  --border: #334155;
+  --muted-foreground: #cbd5e1;
+  --subtle-foreground: #94a3b8;
+}
+
+/* Core Styles */
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at 15% 10%, rgb(99 102 241 / 0.05), transparent 30%),
+    radial-gradient(circle at 90% 0%, rgb(168 85 247 / 0.05), transparent 34%),
+    var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  letter-spacing: -0.01em;
+  font-family: var(--font-manrope), var(--font-geist-sans), sans-serif;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4 {
+  color: var(--foreground);
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+h1 { font-size: clamp(2.25rem, 3vw, 3rem); font-weight: 800; }
+h2 { font-size: clamp(1.75rem, 2vw, 2.25rem); font-weight: 700; }
+h3 { font-size: clamp(1.25rem, 1.5vw, 1.5rem); font-weight: 600; }
+
+p, td, th, input, textarea, select, button {
+  color: var(--foreground);
+}
+
+label {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+small, .text-muted {
+  color: var(--subtle-foreground);
+}
+
+*, ::before, ::after {
+  border-color: var(--color-border);
+}
+
+/* Pointer cursor on all interactive elements */
+button:not(:disabled),
+a,
+select,
+[role="button"],
+[role="tab"],
+[role="menuitem"],
+label[for],
+summary {
+  cursor: pointer;
+}
+
+/* Scrollbar aesthetic styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-primary) 40%, var(--surface) 60%);
+  border-radius: var(--radius-bubble-sm);
 }
