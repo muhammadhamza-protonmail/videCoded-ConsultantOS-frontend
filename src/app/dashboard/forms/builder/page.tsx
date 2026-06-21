@@ -1,19 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { BubbleCard } from "@/components/ui/BubbleCard";
-import { BubbleButton } from "@/components/ui/BubbleButton";
-import { 
-  Type, SquareChartGantt, CheckSquare, Save, 
-  Plus, Loader2, CheckCircle2, FileUp, 
-  Hash, Mail, Phone, List, Radio, Eye, EyeOff, Trash2, PlusCircle,
-  ChevronUp, ChevronDown
+import { useEffect, useMemo, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  CheckSquare,
+  FileUp,
+  GripVertical,
+  Hash,
+  List,
+  Loader2,
+  PanelRightOpen,
+  Phone,
+  Plus,
+  PlusCircle,
+  Radio,
+  Save,
+  SquareChartGantt,
+  Trash2,
+  Type,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { DndContext, DragEndEvent, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { consultantApi } from "@/lib/api";
+import { BubbleButton } from "@/components/ui/BubbleButton";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// Expanded field types
 type FieldType = "text" | "textarea" | "number" | "email" | "phone" | "select" | "checkbox" | "radio" | "file";
 
 interface FormField {
@@ -21,21 +34,54 @@ interface FormField {
   type: FieldType;
   label: string;
   required: boolean;
-  options?: string[]; // For select, radio, checkbox-group
+  options?: string[];
 }
+
+const palette: Array<{ type: FieldType; label: string; icon: React.ReactNode; group: "Input" | "Choice" | "Document" }> = [
+  { type: "text", label: "Short text", icon: <Type size={16} />, group: "Input" },
+  { type: "textarea", label: "Long answer", icon: <SquareChartGantt size={16} />, group: "Input" },
+  { type: "number", label: "Number", icon: <Hash size={16} />, group: "Input" },
+  { type: "phone", label: "Phone", icon: <Phone size={16} />, group: "Input" },
+  { type: "select", label: "Dropdown", icon: <List size={16} />, group: "Choice" },
+  { type: "radio", label: "Single choice", icon: <Radio size={16} />, group: "Choice" },
+  { type: "checkbox", label: "Multi choice", icon: <CheckSquare size={16} />, group: "Choice" },
+  { type: "file", label: "File upload", icon: <FileUp size={16} />, group: "Document" },
+];
+
+const fieldLabels: Record<FieldType, string> = {
+  text: "Short text",
+  textarea: "Long answer",
+  number: "Number",
+  email: "Email",
+  phone: "Phone",
+  select: "Dropdown",
+  checkbox: "Multi choice",
+  radio: "Single choice",
+  file: "File upload",
+};
 
 export default function FormBuilderStudio() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editingTemplateId = Number(searchParams.get("templateId") || 0) || null;
   const [fields, setFields] = useState<FormField[]>([]);
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [formTitle, setFormTitle] = useState("Untitled Client Form");
-  const [formDesc, setFormDesc] = useState("Please fill out the following details for your preliminary consultation.");
-  const [showPreview, setShowPreview] = useState(false);
+  const [formDesc, setFormDesc] = useState("Please complete the requested details and upload supporting documents.");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [loadingTemplate, setLoadingTemplate] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const selectedField = useMemo(
+    () => fields.find((field) => field.id === selectedFieldId) || null,
+    [fields, selectedFieldId]
+  );
 
   useEffect(() => {
     const loadTemplate = async () => {
@@ -46,97 +92,108 @@ export default function FormBuilderStudio() {
         setFormTitle(tpl.title);
         setFormDesc(tpl.description || "");
         const schema = tpl.schema_data as { fields?: FormField[] };
-        setFields(schema.fields || []);
+        const loadedFields = schema.fields || [];
+        setFields(loadedFields);
+        setSelectedFieldId(loadedFields[0]?.id ?? null);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Failed to load template");
       } finally {
         setLoadingTemplate(false);
       }
     };
-    loadTemplate();
+    void loadTemplate();
   }, [editingTemplateId]);
 
   const addField = (type: FieldType) => {
     const newField: FormField = {
       id: crypto.randomUUID(),
       type,
-      label: `New ${type.charAt(0).toUpperCase() + type.slice(1)} Field`,
-      required: false,
+      label: fieldLabels[type],
+      required: type === "file",
+      options: ["select", "radio", "checkbox"].includes(type) ? ["Option 1", "Option 2"] : undefined,
     };
-    // Initialize empty options for selection types
-    if (["select", "radio", "checkbox"].includes(type)) {
-      newField.options = ["Option 1"];
-    }
-    setFields([...fields, newField]);
+    setFields((prev) => [...prev, newField]);
+    setSelectedFieldId(newField.id);
   };
 
-  const removeField = (id: string) => setFields(fields.filter((f) => f.id !== id));
+  const removeField = (id: string) => {
+    setFields((prev) => {
+      const next = prev.filter((field) => field.id !== id);
+      if (selectedFieldId === id) setSelectedFieldId(next[0]?.id ?? null);
+      return next;
+    });
+  };
 
   const updateField = (id: string, updates: Partial<FormField>) => {
-    setFields(fields.map((f) => f.id === id ? { ...f, ...updates } : f));
+    setFields((prev) => prev.map((field) => (field.id === id ? { ...field, ...updates } : field)));
   };
 
   const addOption = (fieldId: string) => {
-    setFields(fields.map(f => {
-      if (f.id === fieldId) {
-        return { ...f, options: [...(f.options || []), `Option ${(f.options?.length || 0) + 1}`] };
-      }
-      return f;
-    }));
+    setFields((prev) =>
+      prev.map((field) =>
+        field.id === fieldId
+          ? { ...field, options: [...(field.options || []), `Option ${(field.options?.length || 0) + 1}`] }
+          : field
+      )
+    );
   };
 
   const updateOption = (fieldId: string, index: number, value: string) => {
-    setFields(fields.map(f => {
-      if (f.id === fieldId && f.options) {
-        const newOptions = [...f.options];
-        newOptions[index] = value;
-        return { ...f, options: newOptions };
-      }
-      return f;
-    }));
+    setFields((prev) =>
+      prev.map((field) => {
+        if (field.id !== fieldId || !field.options) return field;
+        const options = [...field.options];
+        options[index] = value;
+        return { ...field, options };
+      })
+    );
   };
 
   const removeOption = (fieldId: string, index: number) => {
-    setFields(fields.map(f => {
-      if (f.id === fieldId && f.options) {
-        return { ...f, options: f.options.filter((_, i) => i !== index) };
-      }
-      return f;
-    }));
+    setFields((prev) =>
+      prev.map((field) =>
+        field.id === fieldId && field.options
+          ? { ...field, options: field.options.filter((_, i) => i !== index) }
+          : field
+      )
+    );
   };
 
-  const moveField = (index: number, direction: "up" | "down") => {
-    const newFields = [...fields];
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= newFields.length) return;
-    
-    [newFields[index], newFields[targetIndex]] = [newFields[targetIndex], newFields[index]];
-    setFields(newFields);
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setFields((items) => {
+      const oldIndex = items.findIndex((item) => item.id === active.id);
+      const newIndex = items.findIndex((item) => item.id === over.id);
+      return arrayMove(items, oldIndex, newIndex);
+    });
   };
 
   const handlePublish = async () => {
-    if (!formTitle.trim()) { setError("Please give your form a title."); return; }
-    if (fields.length === 0) { setError("Add at least one field before publishing."); return; }
+    if (!formTitle.trim()) {
+      setError("Please give your form a title.");
+      return;
+    }
+    if (fields.length === 0) {
+      setError("Add at least one field before saving.");
+      return;
+    }
 
     setError("");
     setSaving(true);
     try {
+      const payload = {
+        title: formTitle,
+        description: formDesc,
+        schema_data: { fields },
+      };
       if (editingTemplateId) {
-        await consultantApi.updateTemplate(editingTemplateId, {
-          title: formTitle,
-          description: formDesc,
-          schema_data: { fields },
-        });
+        await consultantApi.updateTemplate(editingTemplateId, payload);
       } else {
-        await consultantApi.createTemplate({
-          title: formTitle,
-          description: formDesc,
-          schema_data: { fields },
-          is_global: false,
-        });
+        await consultantApi.createTemplate({ ...payload, is_global: false });
       }
       setSaved(true);
-      setTimeout(() => router.push("/dashboard/forms"), 1500);
+      setTimeout(() => router.push("/dashboard/forms"), 900);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to save form");
     } finally {
@@ -145,237 +202,273 @@ export default function FormBuilderStudio() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] gap-4 overflow-hidden">
-
-      {/* Toolbox Pane - Robust Scrolling */}
-      <div className="w-64 xl:w-72 flex flex-col shrink-0 overflow-hidden border border-border rounded-bubble-lg bg-surface/70">
-        <div className="p-3 border-b border-border bg-background/60 flex items-center justify-between">
-          <h2 className="font-bold text-lg flex items-center gap-2">
-            <Plus className="text-lava-500" size={20} /> Toolbox
-          </h2>
-          <BubbleButton 
-            variant="ghost" 
-            size="sm" 
-            className="w-10 h-10 p-0 rounded-full"
-            onClick={() => setShowPreview(!showPreview)}
-            title={showPreview ? "Hide JSON" : "Show JSON"}
-          >
-            {showPreview ? <EyeOff size={16} /> : <Eye size={16} />}
-          </BubbleButton>
+    <div className="h-[calc(100vh-6.5rem)] min-h-[680px] grid grid-cols-[220px_minmax(0,1fr)_320px] gap-4 overflow-hidden">
+      <aside className="min-w-0 rounded-bubble-lg border border-border/70 bg-surface/85 overflow-hidden flex flex-col">
+        <div className="px-4 py-3 border-b border-border/70">
+          <p className="text-xs font-black uppercase tracking-wider text-foreground/45">Field Library</p>
+          <h2 className="text-lg font-bold">Add fields</h2>
         </div>
-        
-        <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3 custom-scrollbar pb-10">
-          <div className="flex flex-col gap-2">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mt-2 mb-1">Standard Inputs</h3>
-            <ToolButton icon={<Type size={16} />} label="Short Text" onClick={() => addField("text")} />
-            <ToolButton icon={<SquareChartGantt size={16} />} label="Paragraph" onClick={() => addField("textarea")} />
-            <ToolButton icon={<Hash size={16} />} label="Number" onClick={() => addField("number")} />
-            <ToolButton icon={<Mail size={16} />} label="Email" onClick={() => addField("email")} />
-            <ToolButton icon={<Phone size={16} />} label="Phone" onClick={() => addField("phone")} />
-            
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mt-4 mb-1">Selection</h3>
-            <ToolButton icon={<List size={16} />} label="Drop Down" onClick={() => addField("select")} />
-            <ToolButton icon={<CheckSquare size={16} />} label="Checkboxes" onClick={() => addField("checkbox")} />
-            <ToolButton icon={<Radio size={16} />} label="Radio Group" onClick={() => addField("radio")} />
-            
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mt-4 mb-1">Advanced</h3>
-            <ToolButton icon={<FileUp size={16} />} label="File Upload" onClick={() => addField("file")} />
-          </div>
-
-          {showPreview && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-foreground/40 mb-2">JSON Schema</h3>
-              <div className="p-4 bg-background border-[2px] border-border rounded-bubble-sm shadow-inner">
-                <pre className="text-[10px] text-lava-500 overflow-auto max-h-96 whitespace-pre-wrap font-mono leading-relaxed">
-                  {JSON.stringify({ fields }, null, 2)}
-                </pre>
+        <div className="p-3 overflow-y-auto custom-scrollbar">
+          {(["Input", "Choice", "Document"] as const).map((group) => (
+            <div key={group} className="mb-5">
+              <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-foreground/45">{group}</p>
+              <div className="grid gap-2">
+                {palette.filter((item) => item.group === group).map((item) => (
+                  <button
+                    key={item.type}
+                    type="button"
+                    onClick={() => addField(item.type)}
+                    className="h-10 px-3 rounded-bubble-sm border border-border bg-background/70 hover:border-primary hover:text-primary flex items-center gap-2 text-sm font-bold text-left"
+                  >
+                    <span className="w-6 h-6 rounded-bubble-sm bg-surface border border-border flex items-center justify-center">
+                      {item.icon}
+                    </span>
+                    {item.label}
+                  </button>
+                ))}
               </div>
-            </motion.div>
-          )}
+            </div>
+          ))}
         </div>
-      </div>
+      </aside>
 
-      {/* Canvas Pane */}
-      <div className="flex-1 flex flex-col overflow-hidden pb-3">
-        <div className="flex items-center justify-between mb-4 shrink-0 gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">{editingTemplateId ? "Edit Form Template" : "Form Studio"}</h1>
-            <p className="text-sm text-foreground/60 font-medium">Drag-and-drop workflow (Coming soon) — Use buttons for now.</p>
+      <main className="min-w-0 rounded-bubble-lg border border-border/70 bg-surface/85 overflow-hidden flex flex-col">
+        <div className="h-14 px-4 border-b border-border/70 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold">{editingTemplateId ? "Edit Form Template" : "Form Studio"}</h1>
+            <p className="text-xs text-foreground/55 font-medium">
+              Name and email are collected automatically. Do not add them as fields.
+            </p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {error && <span className="text-sm font-bold text-red-500">{error}</span>}
-            <BubbleButton
-              onClick={handlePublish}
-              disabled={saving || saved}
-              className={`gap-2 h-11 px-6 ${saved ? "bg-green-500 border-green-600" : ""}`}
-            >
-              {saving ? <Loader2 size={18} className="animate-spin" /> : saved ? <CheckCircle2 size={18} /> : <Save size={18} />}
-              {saved ? "Saved & Redirecting..." : editingTemplateId ? "Update Form" : "Publish Form"}
+          <div className="flex items-center gap-2 shrink-0">
+            {loadingTemplate && <span className="text-xs font-bold text-foreground/55">Loading...</span>}
+            {error && <span className="text-xs font-bold text-red-500 max-w-64 truncate">{error}</span>}
+            <BubbleButton onClick={handlePublish} disabled={saving || saved} className="gap-2">
+              {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <CheckCircle2 size={16} /> : <Save size={16} />}
+              {saved ? "Saved" : editingTemplateId ? "Update" : "Save"}
             </BubbleButton>
           </div>
         </div>
-        {loadingTemplate && <p className="text-sm font-semibold text-foreground/70 mb-2">Loading template...</p>}
 
-        <BubbleCard className="flex-1 p-0 overflow-y-auto bg-background/40 border border-border relative">
-          <div className="absolute inset-0 z-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]" />
-
-          <div className="max-w-5xl mx-auto flex flex-col gap-3 p-5 lg:p-6 relative z-10 min-h-full">
-            {/* Form title & description */}
-            <div className="border-b border-border pb-4 mb-4">
+        <div className="flex-1 overflow-y-auto custom-scrollbar bg-background/45">
+          <div className="max-w-4xl mx-auto p-4">
+            <section className="mb-4 rounded-bubble-sm border border-border bg-surface p-4">
+              <label className="text-[10px] font-black uppercase tracking-wider text-foreground/45">Template</label>
               <input
-                type="text"
                 value={formTitle}
                 onChange={(e) => setFormTitle(e.target.value)}
-                className="text-3xl lg:text-4xl font-extrabold bg-transparent outline-none w-full placeholder:text-foreground/30 focus:text-lava-500 transition-colors"
-                placeholder="Form Title"
+                placeholder="Form title"
+                className="mt-1 w-full bg-transparent text-2xl font-black outline-none focus:text-primary"
               />
               <textarea
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
-                className="text-foreground/80 font-medium bg-transparent outline-none w-full mt-2 resize-none h-11"
-                placeholder="Brief description of this form's purpose..."
+                placeholder="Short instructions for the client"
+                className="mt-1 w-full h-10 resize-none bg-transparent text-sm font-medium text-foreground/70 outline-none"
               />
-            </div>
+            </section>
 
-            {/* Fields */}
             {fields.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-12 text-center text-foreground/20 border-[3px] bg-background/20 border-dashed border-border/40 rounded-bubble-lg h-80">
-                <Plus size={48} className="mb-4 opacity-10" />
-                <p className="font-bold text-xl">Canvas is empty</p>
-                <p className="text-sm font-medium">Add fields from the toolbox to start building.</p>
+              <div className="h-80 rounded-bubble-lg border-2 border-dashed border-border bg-surface/70 flex flex-col items-center justify-center text-center">
+                <Plus size={36} className="text-foreground/25 mb-3" />
+                <p className="font-bold">Start with the field library</p>
+                <p className="text-sm text-foreground/50">Add only the information you need to review the case.</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-4 pb-10">
-                <AnimatePresence mode="popLayout">
-                  {fields.map((field, index) => (
-                    <motion.div
-                      key={field.id}
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      className="group bg-surface border border-border hover:border-lava-500 shadow-sm p-4 rounded-bubble-sm flex gap-3 transition-all"
-                    >
-                      {/* Move Handles */}
-                      <div className="flex flex-col gap-1 shrink-0 pt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => moveField(index, "up")}
-                          disabled={index === 0}
-                          className="p-1.5 rounded-bubble-sm hover:bg-lava-500/10 text-foreground/40 hover:text-lava-600 disabled:opacity-0"
-                        >
-                          <ChevronUp size={20} />
-                        </button>
-                        <button 
-                          onClick={() => moveField(index, "down")}
-                          disabled={index === fields.length - 1}
-                          className="p-1.5 rounded-bubble-sm hover:bg-lava-500/10 text-foreground/40 hover:text-lava-600 disabled:opacity-0"
-                        >
-                          <ChevronDown size={20} />
-                        </button>
-                      </div>
-
-                      <div className="flex-1 flex flex-col gap-4">
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex flex-col gap-1 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-black px-1.5 py-0.5 rounded bg-foreground/5 border border-border text-foreground/40 uppercase tracking-tighter`}>
-                                {field.type}
-                              </span>
-                              <input
-                                type="text"
-                                value={field.label}
-                                onChange={(e) => updateField(field.id, { label: e.target.value })}
-                                className="font-bold text-lg bg-transparent border-b-2 border-transparent focus:border-lava-500 focus:outline-none w-full pb-1"
-                              />
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 bg-background px-3 py-1.5 rounded-bubble-sm border border-border/60">
-                            <label className="flex items-center gap-2 cursor-pointer">
-                              <input 
-                                type="checkbox" 
-                                checked={field.required} 
-                                onChange={() => updateField(field.id, { required: !field.required })}
-                                className="w-4 h-4 rounded-md border-border text-lava-600 focus:ring-lava-500" 
-                              />
-                              <span className="text-[10px] font-black uppercase text-foreground/60">Required</span>
-                            </label>
-                            <button onClick={() => removeField(field.id)} className="text-red-500 hover:text-red-600">
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Rendering Preview Based on Type */}
-                        <div className="bg-background/55 rounded-bubble-sm p-3 border border-border/50">
-                          {field.type === "text" && <p className="text-foreground/40 text-sm font-medium">Short answer input box</p>}
-                          {field.type === "textarea" && <p className="text-foreground/40 text-sm font-medium">Multi-line message area</p>}
-                          {field.type === "number" && <p className="text-foreground/40 text-sm font-medium">Numeric only input</p>}
-                          {field.type === "email" && <p className="text-foreground/40 text-sm font-medium">Valid email address format</p>}
-                          {field.type === "phone" && <p className="text-foreground/40 text-sm font-medium">Phone number input</p>}
-                          {field.type === "file" && (
-                            <div className="flex items-center gap-2 text-lava-500/60 font-bold">
-                              <FileUp size={18} /> Upload Zone
-                            </div>
-                          )}
-
-                          {/* Options Manager for multi-choice fields */}
-                          {["select", "radio", "checkbox"].includes(field.type) && (
-                            <div className="flex flex-col gap-3">
-                              <p className="text-[10px] font-black uppercase tracking-widest text-foreground/40">Manage Options</p>
-                              <div className="flex flex-wrap gap-2">
-                                {field.options?.map((opt, idx) => (
-                                  <div key={idx} className="flex items-center gap-1 bg-surface border-[2px] border-border rounded-bubble-sm px-2 py-1">
-                                    <input 
-                                      type="text" 
-                                      value={opt} 
-                                      onChange={(e) => updateOption(field.id, idx, e.target.value)}
-                                      className="bg-transparent text-sm font-bold focus:outline-none w-24 text-foreground/80 focus:text-lava-500"
-                                    />
-                                    <button onClick={() => removeOption(field.id, idx)} className="text-red-500 hover:text-red-600 p-1">
-                                      <Trash2 size={12} />
-                                    </button>
-                                  </div>
-                                ))}
-                                <button 
-                                  onClick={() => addOption(field.id)}
-                                  className="flex items-center gap-1 text-xs font-bold text-lava-500 hover:bg-lava-500/10 px-2 py-1 rounded-bubble-sm border-[2px] border-dashed border-lava-500/30"
-                                >
-                                  <PlusCircle size={14} /> Add Option
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+                  <div className="grid gap-2 pb-8">
+                    {fields.map((field, index) => (
+                      <SortableFieldCard
+                        key={field.id}
+                        field={field}
+                        index={index}
+                        selected={field.id === selectedFieldId}
+                        onSelect={() => setSelectedFieldId(field.id)}
+                        onRemove={() => removeField(field.id)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
             )}
           </div>
-        </BubbleCard>
-      </div>
+        </div>
+      </main>
+
+      <aside className="min-w-0 rounded-bubble-lg border border-border/70 bg-surface/85 overflow-hidden flex flex-col">
+        <div className="h-14 px-4 border-b border-border/70 flex items-center gap-2">
+          <PanelRightOpen size={17} className="text-primary" />
+          <div>
+            <p className="text-xs font-black uppercase tracking-wider text-foreground/45">Inspector</p>
+            <h2 className="text-sm font-bold">{selectedField ? "Field settings" : "No field selected"}</h2>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+          {selectedField ? (
+            <FieldInspector
+              field={selectedField}
+              onChange={(updates) => updateField(selectedField.id, updates)}
+              onAddOption={() => addOption(selectedField.id)}
+              onUpdateOption={(index, value) => updateOption(selectedField.id, index, value)}
+              onRemoveOption={(index) => removeOption(selectedField.id, index)}
+              onDelete={() => removeField(selectedField.id)}
+            />
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center text-foreground/45">
+              <AlertCircle size={28} className="mb-2" />
+              <p className="text-sm font-semibold">Select a field to edit label, requirement, and options.</p>
+            </div>
+          )}
+        </div>
+      </aside>
 
       <style jsx global>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
       `}</style>
     </div>
   );
 }
 
-function ToolButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function SortableFieldCard({
+  field,
+  index,
+  selected,
+  onSelect,
+  onRemove,
+}: {
+  field: FormField;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 p-3 rounded-bubble-sm border-[3px] border-border bg-background hover:border-lava-500 hover:text-lava-600 dark:hover:text-lava-400 transition-all font-bold text-sm text-left group shrink-0"
+    <div
+      ref={setNodeRef}
+      style={style}
+      onClick={onSelect}
+      className={`group rounded-bubble-sm border bg-surface p-3 flex items-start gap-3 transition-all ${
+        selected ? "border-primary ring-2 ring-primary/15" : "border-border hover:border-primary/50"
+      } ${isDragging ? "shadow-lg opacity-90" : "shadow-sm"}`}
     >
-      <div className="p-1.5 rounded-bubble-sm bg-surface border-[2px] border-border group-hover:bg-lava-500/10 group-hover:border-lava-500/30 transition-colors">
-        {icon}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        onClick={(e) => e.stopPropagation()}
+        className="mt-1 w-8 h-8 rounded-bubble-sm border border-border bg-background flex items-center justify-center text-foreground/45 hover:text-primary cursor-grab active:cursor-grabbing"
+        title="Drag to reorder"
+      >
+        <GripVertical size={17} />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black text-foreground/45">#{index + 1}</span>
+          <span className="px-2 py-0.5 rounded-bubble-sm bg-background border border-border text-[10px] font-black uppercase text-foreground/50">
+            {fieldLabels[field.type]}
+          </span>
+          {field.required && <span className="text-[10px] font-black text-primary">Required</span>}
+        </div>
+        <p className="mt-1 truncate font-bold">{field.label}</p>
+        <p className="text-xs text-foreground/50">{previewText(field)}</p>
       </div>
-      {label}
-    </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        className="w-8 h-8 rounded-bubble-sm border border-transparent text-foreground/35 hover:text-red-500 hover:border-red-500/30"
+        title="Delete field"
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
   );
+}
+
+function FieldInspector({
+  field,
+  onChange,
+  onAddOption,
+  onUpdateOption,
+  onRemoveOption,
+  onDelete,
+}: {
+  field: FormField;
+  onChange: (updates: Partial<FormField>) => void;
+  onAddOption: () => void;
+  onUpdateOption: (index: number, value: string) => void;
+  onRemoveOption: (index: number) => void;
+  onDelete: () => void;
+}) {
+  const hasOptions = ["select", "radio", "checkbox"].includes(field.type);
+
+  return (
+    <div className="grid gap-4">
+      <div>
+        <label className="text-xs font-black uppercase tracking-wider text-foreground/45">Field label</label>
+        <input
+          value={field.label}
+          onChange={(e) => onChange({ label: e.target.value })}
+          className="mt-1 h-10 w-full px-3 rounded-bubble-sm border border-border bg-background font-semibold outline-none focus:border-primary"
+        />
+      </div>
+
+      <label className="h-10 px-3 rounded-bubble-sm border border-border bg-background flex items-center justify-between">
+        <span className="text-sm font-bold">Required</span>
+        <input
+          type="checkbox"
+          checked={field.required}
+          onChange={(e) => onChange({ required: e.target.checked })}
+          className="w-4 h-4 accent-primary"
+        />
+      </label>
+
+      {hasOptions && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-black uppercase tracking-wider text-foreground/45">Options</p>
+            <button type="button" onClick={onAddOption} className="text-xs font-black text-primary inline-flex items-center gap-1">
+              <PlusCircle size={14} /> Add
+            </button>
+          </div>
+          <div className="grid gap-2">
+            {(field.options || []).map((option, index) => (
+              <div key={`${field.id}-${index}`} className="flex items-center gap-2">
+                <input
+                  value={option}
+                  onChange={(e) => onUpdateOption(index, e.target.value)}
+                  className="h-9 flex-1 min-w-0 px-3 rounded-bubble-sm border border-border bg-background text-sm font-semibold outline-none focus:border-primary"
+                />
+                <button type="button" onClick={() => onRemoveOption(index)} className="w-9 h-9 rounded-bubble-sm border border-border hover:border-red-500 hover:text-red-500">
+                  <Trash2 size={14} className="mx-auto" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <button type="button" onClick={onDelete} className="mt-2 h-10 rounded-bubble-sm border border-red-500/30 text-red-500 font-bold hover:bg-red-500/10">
+        Delete field
+      </button>
+    </div>
+  );
+}
+
+function previewText(field: FormField) {
+  if (field.type === "file") return "Client uploads a supporting document.";
+  if (["select", "radio", "checkbox"].includes(field.type)) return `${field.options?.length || 0} options configured.`;
+  if (field.type === "textarea") return "Long text answer.";
+  if (field.type === "number") return "Numeric answer.";
+  if (field.type === "phone") return "Phone number answer.";
+  if (field.type === "email") return "Email style answer.";
+  return "Short text answer.";
 }
